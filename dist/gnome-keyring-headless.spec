@@ -5,7 +5,7 @@ Summary:	Provides configuration helper script for gnome-keyring headless
 License:	GPL-3.0-or-later
 Group:		System/Authentication
 URL:		https://github.com/matthewdva/%{name}
-Source:		%{url}/archive/${version}/%{name}-%{version}.tar.gz
+Source:		%{url}/archive/%{version}/%{name}-%{version}.tar.gz
 Requires:	gnome-keyring-pam
 Requires:	dbus
 
