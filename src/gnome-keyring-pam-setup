@@ -44,69 +44,47 @@ if [[ $ACTION = "install" ]]; then
       if [ $USE_AUTHSELECT -eq 1 ]; then
 	 patch_file='/tmp/sssd_authselect.patch'
 	 /bin/cat > ${patch_file} << EOF
-diff -u -r a/password-auth b/password-auth
+diff -u1 -r a/password-auth b/password-auth
 --- a/password-auth	2021-08-09 04:59:30.000000000 -0400
 +++ b/password-auth	2022-02-02 00:00:00.000000000 -0500
-@@ -10,6 +10,7 @@
- auth        [default=1 ignore=ignore success=ok]         pam_usertype.so isregular
- auth        sufficient                                   pam_sss.so forward_pass
+@@ -12,2 +12,3 @@
  auth        required                                     pam_faillock.so authfail                               {include if "with-faillock"}
 +auth        optional                                     pam_gnome_keyring.so auto_start                        {include if "with-pam-gnome-keyring"}
  auth        required                                     pam_deny.so
- 
- account     required                                     pam_access.so                                          {include if "with-pamaccess"}
-@@ -33,3 +34,4 @@
- session     [success=1 default=ignore]                   pam_succeed_if.so service in crond quiet use_uid
- session     required                                     pam_unix.so
+@@ -35 +36,2 @@
  session     optional                                     pam_sss.so
 +session     optional                                     pam_gnome_keyring.so auto_start                        {include if "with-pam-gnome-keyring"}
-diff -u -r a/README b/README
+diff -u1 -r a/README b/README
 --- a/README	2021-08-09 04:59:30.000000000 -0400
 +++ b/README	2022-02-02 00:00:00.000000000 -0500
-@@ -1,4 +1,4 @@
+@@ -1,2 +1,2 @@
 -Enable SSSD for system authentication (also for local users only)
 +Enable SSSD for system authentication with gnome-keyring option (also for local users only)
  =================================================================
- 
- Selecting this profile will enable SSSD as the source of identity
-@@ -97,6 +97,9 @@
- without-nullok::
-     Do not add nullok parameter to pam_unix.
+@@ -99,2 +99,5 @@
  
 +with-pam-gnome-keyring::
 +    If set, will enable gnome-keyring-daemon autostart via PAM.
 +
  DISABLE SPECIFIC NSSWITCH DATABASES
- -----------------------------------
- 
-diff -u -r a/REQUIREMENTS b/REQUIREMENTS
+diff -u1 -r a/REQUIREMENTS b/REQUIREMENTS
 --- a/REQUIREMENTS	2021-08-09 04:59:30.000000000 -0400
 +++ b/REQUIREMENTS	2022-02-02 00:00:00.000000000 -0500
-@@ -17,4 +17,8 @@
-                                                                                           {include if "with-files-domain"}
- - with-files-domain is selected, make sure the files provider is enabled in SSSD          {include if "with-files-domain"}
-   - set enable_files_domain=true in [sssd] section of /etc/sssd/sssd.conf                 {include if "with-files-domain"}
--  - or create a custom domain with id_provider=files                                      {include if "with-files-domain"}
-\ No newline at end of file
-+  - or create a custom domain with id_provider=files                                      {include if "with-files-domain"}
+@@ -6,2 +6,6 @@
+ - with-fingerprint is selected, make sure fprintd service is configured and enabled       {include if "with-fingerprint"}
 +
 +          {include if "with-pam-gnome-keyring"}
 +- with-pam-gnome-keyring is selected, make sure the pam_gnome_keyring module
 +  is present.
-diff -u -r a/system-auth b/system-auth
+                                                                                           {include if "with-pam-u2f"}
+diff -u1 -r a/system-auth b/system-auth
 --- a/system-auth	2021-08-09 04:59:30.000000000 -0400
-+++ b/system-auth	2022-02-13 17:30:11.364332614 -0500
-@@ -14,6 +14,7 @@
- auth        sufficient                                   pam_unix.so {if not "without-nullok":nullok}
- auth        [default=1 ignore=ignore success=ok]         pam_usertype.so isregular
++++ b/system-auth	2022-02-02 00:00:00.000000000 -0500
+@@ -16,2 +16,3 @@
  auth        sufficient                                   pam_sss.so forward_pass
 +auth        optional                                     pam_gnome_keyring.so only_if=login auto_start          {include if "with-pam-gnome-keyring"}
  auth        required                                     pam_faillock.so authfail                               {include if "with-faillock"}
- auth        required                                     pam_deny.so
- 
-@@ -38,3 +39,4 @@
- session     [success=1 default=ignore]                   pam_succeed_if.so service in crond quiet use_uid
- session     required                                     pam_unix.so
+@@ -40 +41,2 @@
  session     optional                                     pam_sss.so
 +session     optional                                     pam_gnome_keyring.so only_if=login auto_start          {include if "with-pam-gnome-keyring"}
 EOF
@@ -121,15 +99,16 @@ EOF
 	  --base-on=sssd \
 	  --symlink-nsswitch --symlink-dconf \
 	  --symlink=fingerprint-auth \
-	  --synlink=smartcard-auth \
-	  --symlink=postlogin
+	  --symlink=smartcard-auth \
+	  --symlink=postlogin > /dev/null 2>&1
 	/bin/cp \
 	  ${_src_profile}/{README,REQUIREMENTS,{password,system}-auth}\
 	  ${_datadir}/vendor/sssd
-	pushd ${_datadir}/vendor
-	/bin/patch -p1 --fuzz=2 < ${patch_file}
-	popd
-	current=$(/usr/bin/authselect current -r | awk '{print $1}')
+	pushd ${_datadir}/vendor/sssd > /dev/null 2>&1
+	/bin/patch --quiet -p1 --fuzz=2 --no-backup-if-mismatch \
+		--input=${patch_file}
+	popd > /dev/null 2>&1
+	current=$(/usr/bin/authselect current -r | /bin/awk '{print $1}')
 	if [ "$current" == "sssd" ]; then
 	  /usr/bin/authselect enable-feature with-pam-gnome-keyring
 	fi

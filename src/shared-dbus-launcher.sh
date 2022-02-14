@@ -32,7 +32,11 @@ function validate-dbus-session () {
    
 [[ ! -z ${SUDO_USER} ]] && return 0
 
-DBUS_ENV="/run/user/${UID}/db-env"
+if [ -d "/run/user/${UID}" ]; then
+  DBUS_ENV="/run/user/${UID}/dbus_env"
+else
+  DBUS_ENV='~/.dbus_env'
+fi
 
 # Gnome Keyring Daemon will fail to start properly unless these 2
 # Directories exist.
@@ -54,4 +58,4 @@ unset BIN
 unset PUSER
 unset PID
 
-trap "/bin/bash /etc/profile.d/logoff.d/lock_gnome_keyring.sh" EXIT
+trap "/bin/bash /etc/profile.d/logout.d/lock_gnome_keyring.sh" EXIT
