@@ -53,4 +53,4 @@ system.  The scripts will assist in:
 %{_datadir}/%{name}/gnome-keyring-pam-setup
 
 %changelog
-%{?autochanglog}
+%{?autochangelog}
