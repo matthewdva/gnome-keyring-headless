@@ -1,11 +1,13 @@
 Name:		gnome-keyring-headless
 Version:	0.0.1
-Release:	%{autorelease}
+%{?autorelease:Release: %{autorelease}}
+%{!?autorelease:Release: 1%{?dist}}
 Summary:	Provides configuration helper script for gnome-keyring headless
 License:	GPL-3.0-or-later
 Group:		System/Authentication
 URL:		https://github.com/matthewdva/%{name}
 Source:		%{url}/archive/%{version}/%{name}-%{version}.tar.gz
+BuildArch:	noarch
 Requires:	gnome-keyring-pam
 Requires:	dbus
 
@@ -32,9 +34,9 @@ system.  The scripts will assist in:
 # N/A
 
 %install
-%__install -Dm0555 src/shared-dbus-launcher.sh %{buildroot}%{_sysconfdir}/profile.d/
-%__install -Dm0555 src/lock-gnome-keyring.sh %{buildroot}%{_sysconfdir}/profile.d/logout.d/
-%__install -Dm0500 src/gnome-keyring-pam-setup %{buildroot}%{_datadir}/%{name}/
+%__install -Dm0555 src/shared-dbus-launcher.sh %{buildroot}%{_sysconfdir}/profile.d/shared-dbus-launcher.sh
+%__install -Dm0555 src/lock_gnome_keyring.sh %{buildroot}%{_sysconfdir}/profile.d/logout.d/lock_gnome_keyring.sh
+%__install -Dm0500 src/gnome-keyring-pam-setup %{buildroot}%{_datadir}/%{name}/gnome-keyring-pam-setup
 
 %check
 # N/A
@@ -47,7 +49,7 @@ system.  The scripts will assist in:
 
 %files
 %{_sysconfdir}/profile.d/shared-dbus-launcher.sh
-%{_sysconfdir}/profile.d/logout.d/lock-gnome-keyring.sh
+%{_sysconfdir}/profile.d/logout.d/lock_gnome_keyring.sh
 %{_datadir}/%{name}/gnome-keyring-pam-setup
 
 %changelog
