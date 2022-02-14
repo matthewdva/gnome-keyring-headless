@@ -1,0 +1,191 @@
+#!/bin/bash
+
+ACTION=
+
+if [[ $1 != 'install' && $1 != 'uninstall' ]]; then 
+  echo `basename $0`" <install|uninstall>"
+  exit 1
+fi
+
+ACTION=$1
+FLAVOR=
+PAMLIBDIR=
+if [[ `uname` = 'Linux' ]]; then
+  PAMLIBDIR=/usr/lib64/security
+  if grep -q SUSE /etc/issue; then
+    FLAVOR=suse
+  fi
+  if grep -q -E "rhel|fedora" /etc/os-release; then
+    FLAVOR=rhel
+    . /etc/os-release
+    case ${VERSION_ID} in
+      7	) SYSTEM_AUTH='/etc/pam.d/system-auth-ac'
+	  USE_AUTHSELECT=0
+        ;;
+      * ) USE_AUTHSELECT=1
+        ;; 
+    esac
+  fi
+fi
+
+if [[ $FLAVOR = "" ]]; then
+  echo "OS/Platform cannot be identified, exiting"
+  exit 1
+fi
+
+if [[ $ACTION = "install" ]]; then
+  case $FLAVOR in
+    suse)
+	    /usr/sbin/pam-config --add \
+		    --gnome_keyring --gnome_keyring-autostart \
+		    --gnome_keyring-only_if=login
+    ;;
+    rhel)
+      if [ $USE_AUTHSELECT -eq 1 ]; then
+	 patch_file='/tmp/sssd_authselect.patch'
+	 /bin/cat > ${patch_file} << EOF
+diff -u -r a/password-auth b/password-auth
+--- a/password-auth	2021-08-09 04:59:30.000000000 -0400
++++ b/password-auth	2022-02-02 00:00:00.000000000 -0500
+@@ -10,6 +10,7 @@
+ auth        [default=1 ignore=ignore success=ok]         pam_usertype.so isregular
+ auth        sufficient                                   pam_sss.so forward_pass
+ auth        required                                     pam_faillock.so authfail                               {include if "with-faillock"}
++auth        optional                                     pam_gnome_keyring.so auto_start                        {include if "with-pam-gnome-keyring"}
+ auth        required                                     pam_deny.so
+ 
+ account     required                                     pam_access.so                                          {include if "with-pamaccess"}
+@@ -33,3 +34,4 @@
+ session     [success=1 default=ignore]                   pam_succeed_if.so service in crond quiet use_uid
+ session     required                                     pam_unix.so
+ session     optional                                     pam_sss.so
++session     optional                                     pam_gnome_keyring.so auto_start                        {include if "with-pam-gnome-keyring"}
+diff -u -r a/README b/README
+--- a/README	2021-08-09 04:59:30.000000000 -0400
++++ b/README	2022-02-02 00:00:00.000000000 -0500
+@@ -1,4 +1,4 @@
+-Enable SSSD for system authentication (also for local users only)
++Enable SSSD for system authentication with gnome-keyring option (also for local users only)
+ =================================================================
+ 
+ Selecting this profile will enable SSSD as the source of identity
+@@ -97,6 +97,9 @@
+ without-nullok::
+     Do not add nullok parameter to pam_unix.
+ 
++with-pam-gnome-keyring::
++    If set, will enable gnome-keyring-daemon autostart via PAM.
++
+ DISABLE SPECIFIC NSSWITCH DATABASES
+ -----------------------------------
+ 
+diff -u -r a/REQUIREMENTS b/REQUIREMENTS
+--- a/REQUIREMENTS	2021-08-09 04:59:30.000000000 -0400
++++ b/REQUIREMENTS	2022-02-02 00:00:00.000000000 -0500
+@@ -17,4 +17,8 @@
+                                                                                           {include if "with-files-domain"}
+ - with-files-domain is selected, make sure the files provider is enabled in SSSD          {include if "with-files-domain"}
+   - set enable_files_domain=true in [sssd] section of /etc/sssd/sssd.conf                 {include if "with-files-domain"}
+-  - or create a custom domain with id_provider=files                                      {include if "with-files-domain"}
+\ No newline at end of file
++  - or create a custom domain with id_provider=files                                      {include if "with-files-domain"}
++
++          {include if "with-pam-gnome-keyring"}
++- with-pam-gnome-keyring is selected, make sure the pam_gnome_keyring module
++  is present.
+diff -u -r a/system-auth b/system-auth
+--- a/system-auth	2021-08-09 04:59:30.000000000 -0400
++++ b/system-auth	2022-02-13 17:30:11.364332614 -0500
+@@ -14,6 +14,7 @@
+ auth        sufficient                                   pam_unix.so {if not "without-nullok":nullok}
+ auth        [default=1 ignore=ignore success=ok]         pam_usertype.so isregular
+ auth        sufficient                                   pam_sss.so forward_pass
++auth        optional                                     pam_gnome_keyring.so only_if=login auto_start          {include if "with-pam-gnome-keyring"}
+ auth        required                                     pam_faillock.so authfail                               {include if "with-faillock"}
+ auth        required                                     pam_deny.so
+ 
+@@ -38,3 +39,4 @@
+ session     [success=1 default=ignore]                   pam_succeed_if.so service in crond quiet use_uid
+ session     required                                     pam_unix.so
+ session     optional                                     pam_sss.so
++session     optional                                     pam_gnome_keyring.so only_if=login auto_start          {include if "with-pam-gnome-keyring"}
+EOF
+	_datadir='/usr/share/authselect'
+	if [ -d "${_datadir}/vendor/sssd" ] ; then
+		/bin/mv "${_datadir}/vendor/{,.old.}sssd"
+		_src_profile="${_datadir}/vendor/.old.sssd"
+	else
+		_src_profile="${_datadir}/default/sssd"
+	fi
+	/usr/bin/authselect create-profile sssd --vendor \
+	  --base-on=sssd \
+	  --symlink-nsswitch --symlink-dconf \
+	  --symlink=fingerprint-auth \
+	  --synlink=smartcard-auth \
+	  --symlink=postlogin
+	/bin/cp \
+	  ${_src_profile}/{README,REQUIREMENTS,{password,system}-auth}\
+	  ${_datadir}/vendor/sssd
+	pushd ${_datadir}/vendor
+	/bin/patch -p1 --fuzz=2 < ${patch_file}
+	popd
+	current=$(/usr/bin/authselect current -r | awk '{print $1}')
+	if [ "$current" == "sssd" ]; then
+	  /usr/bin/authselect enable-feature with-pam-gnome-keyring
+	fi
+      else
+      # Legacy auth-config / RHEL/CENTOS 7
+      /usr/bin/egrep -L 'auth.*pam_gnome_keyring.so' /etc/pam.d/system-auth-ac >/dev/null 2>&1
+      if [ $? != 0 ];  then
+        /usr/bin/perl -i -pe '
+          s!(auth\s+)\S+(\s+pam_deny\.so.*)
+           !auth        optional\tpam_gnome_keyring.so only_if=login,su-l,su auto_start\n$1        required\t$2!gx;
+        ' ${SYSTEM_AUTH}
+      fi
+
+      /usr/bin/egrep -L 'auth.*pam_gnome_keyring.so' /etc/pam.d/sshd >/dev/null 2>&1
+      if [ $? != 0 ];  then
+        /usr/bin/perl -i -pe '
+          s!^(auth\s+\S+\s+password-auth.*)
+           !auth        optional\tpam_gnome_keyring.so auto_start\n$1!gx;
+        ' /etc/pam.d/sshd
+      fi
+      /usr/bin/egrep -L 'session.*pam_gnome_keyring.so' /etc/pam.d/system-auth-ac >/dev/null 2>&1
+      if [ $? != 0 ];  then
+          echo -e "session        optional\tpam_gnome_keyring.so only_if=login,su-l,su auto_start" >> \
+         ${SYSTEM_AUTH}
+      fi
+      /usr/bin/egrep -L 'session.*pam_gnome_keyring.so' /etc/pam.d/sshd >/dev/null 2>&1
+      if [ $? != 0 ];  then
+          /usr/bin/perl -i -pe '
+            s!^(session\s+include\s+password-auth.*)
+             !session        optional\tpam_gnome_keyring.so auto_start\n$1!gx;
+         ' /etc/pam.d/sshd
+      fi
+    fi
+    ;;
+  esac
+else
+  case $FLAVOR in
+    suse)
+	    /usr/sbin/pam-config --delete --gnome_keyring 
+		    
+    ;;
+    rhel)
+      if [ $USE_AUTHSELECT -eq 1 ]; then
+	_datadir='/usr/share/authselect'
+	current=$(/usr/bin/authselect current -r | awk '{print $1}')
+	if [ "$current" == "sssd" ] && [ -d "${_datadir}/vendor/sssd" ]; then
+	  /usr/bin/authselect disable-feature with-pam-gnome-keyring
+	  /bin/rm -r "${_datadir}/vendor/sssd"
+	  [ -d "${_datadir}/vendor/.old.sssd" ] && /bin/mv \
+		  "${_datadir}/vendor/{.old.,}sssd"
+	fi
+      else
+         /usr/bin/perl -i -pe '
+           s!^\s*(auth|session)\s+optional\s+\S*?pam_gnome_keyring.so.*\n!!sg
+           ' ${SYSTEM_AUTH} /etc/pam.d/sshd
+      fi
+    ;;
+  esac
+fi
