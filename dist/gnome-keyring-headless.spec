@@ -1,7 +1,6 @@
 Name:		gnome-keyring-headless
 Version:	0.0.1
-%{?autorelease:Release: %{autorelease}}
-%{!?autorelease:Release: 1%{?dist}}
+Release:	0%{?dist}
 Summary:	Provides configuration helper script for gnome-keyring headless
 License:	GPL-3.0-or-later
 Group:		System/Authentication
@@ -48,6 +47,7 @@ system.  The scripts will assist in:
 [ $1 == 0 ] && %{_datadir}/%{name}/gnome-keyring-pam-setup uninstall
 
 %files
+%license LICENSE
 %{_sysconfdir}/profile.d/shared-dbus-launcher.sh
 %{_sysconfdir}/profile.d/logout.d/lock_gnome_keyring.sh
 %{_datadir}/%{name}/gnome-keyring-pam-setup
